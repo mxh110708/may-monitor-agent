@@ -18,7 +18,7 @@ func (e *httpStatusError) Error() string {
 		return ""
 	}
 	if e.Body != "" {
-		return fmt.Sprintf("status code: %d,%s", e.StatusCode, e.Body)
+		return fmt.Sprintf("monitor HTTP status: %d", e.StatusCode)
 	}
 	if e.Status != "" {
 		return e.Status
@@ -29,13 +29,13 @@ func (e *httpStatusError) Error() string {
 func parseV2Response(body []byte) (*v2.Response, error) {
 	var rpcResp v2.Response
 	if err := json.Unmarshal(body, &rpcResp); err != nil {
-		return nil, fmt.Errorf("invalid v2 JSON-RPC response: %w, body: %s", err, bodySnippet(body))
+		return nil, fmt.Errorf("invalid v2 JSON-RPC response: %w", err)
 	}
 	if rpcResp.JSONRPC != v2.Version {
-		return nil, fmt.Errorf("invalid v2 JSON-RPC version %q, body: %s", rpcResp.JSONRPC, bodySnippet(body))
+		return nil, fmt.Errorf("invalid v2 JSON-RPC version")
 	}
 	if rpcResp.Error != nil {
-		return &rpcResp, fmt.Errorf("v2 rpc error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+		return &rpcResp, fmt.Errorf("v2 rpc error %d", rpcResp.Error.Code)
 	}
 	return &rpcResp, nil
 }

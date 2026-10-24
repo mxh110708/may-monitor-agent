@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"net/http"
@@ -231,10 +230,10 @@ func postV2RequestContext(ctx context.Context, payload []byte) (*v2.Response, er
 	client := dnsresolver.GetHTTPClientWithPreference(35*time.Second, flags.PreferIPVersion)
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, transportError(err)
 	}
 	defer resp.Body.Close()
-	bytesBody, err := io.ReadAll(resp.Body)
+	bytesBody, err := readMonitorResponse(resp.Body)
 	if err != nil {
 		return nil, err
 	}

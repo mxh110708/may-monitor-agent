@@ -139,7 +139,7 @@ func TestSelectLatestStableRelease(t *testing.T) {
 		testRelease("v1.2.10", false, false, publishedAt, assetName),
 		testRelease("v1.2.11-beta.1", true, false, publishedAt.Add(2*time.Hour), assetName),
 		testRelease("v1.2.12", false, true, publishedAt.Add(3*time.Hour), assetName),
-		testRelease("v1.2.13", false, false, publishedAt.Add(4*time.Hour), "komari-agent-linux-arm64"),
+		testRelease("v1.2.13", false, false, publishedAt.Add(4*time.Hour), "may-monitor-agent-linux-arm64"),
 		testRelease("v1.2.9", false, false, publishedAt.Add(-time.Hour), assetName),
 	}
 
@@ -233,9 +233,9 @@ func TestExpectedAssetName(t *testing.T) {
 		goarch string
 		want   string
 	}{
-		{"linux", "amd64", "komari-agent-linux-amd64"},
-		{"darwin", "arm64", "komari-agent-darwin-arm64"},
-		{"windows", "amd64", "komari-agent-windows-amd64.exe"},
+		{"linux", "amd64", "may-monitor-agent-linux-amd64"},
+		{"darwin", "arm64", "may-monitor-agent-darwin-arm64"},
+		{"windows", "amd64", "may-monitor-agent-windows-amd64.exe"},
 	}
 
 	for _, tt := range tests {
@@ -247,14 +247,14 @@ func TestExpectedAssetName(t *testing.T) {
 }
 
 func TestSelectLatestSnapshotRelease(t *testing.T) {
-	assetName := "komari-agent-linux-amd64"
+	assetName := "may-monitor-agent-linux-amd64"
 	base := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
 
 	releases := []githubRelease{
 		testRelease("v9.9.9", false, false, base.Add(5*time.Hour), assetName),
 		testRelease("Snapshot-2607061400", true, true, base.Add(4*time.Hour), assetName),
 		testRelease("beta-2607061500", true, false, base.Add(6*time.Hour), assetName),
-		testRelease("Snapshot-2607061600", true, false, base.Add(7*time.Hour), "komari-agent-linux-arm64"),
+		testRelease("Snapshot-2607061600", true, false, base.Add(7*time.Hour), "may-monitor-agent-linux-arm64"),
 		testRelease("Snapshot-2607061200", true, false, base, assetName),
 		testRelease("Snapshot-2607061300", true, false, base.Add(time.Hour), assetName),
 	}
@@ -272,7 +272,7 @@ func TestSelectLatestSnapshotRelease(t *testing.T) {
 }
 
 func TestSelectLatestSnapshotReleaseTieBreaksByTag(t *testing.T) {
-	assetName := "komari-agent-linux-amd64"
+	assetName := "may-monitor-agent-linux-amd64"
 	publishedAt := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
 
 	releases := []githubRelease{
@@ -291,18 +291,18 @@ func TestSelectLatestSnapshotReleaseTieBreaksByTag(t *testing.T) {
 
 func TestSelectLatestSnapshotReleaseNoMatch(t *testing.T) {
 	releases := []githubRelease{
-		testRelease("v1.2.3", false, false, time.Now(), "komari-agent-linux-amd64"),
-		testRelease("Snapshot-2607061200", true, true, time.Now(), "komari-agent-linux-amd64"),
-		testRelease("Snapshot-2607061300", true, false, time.Now(), "komari-agent-linux-arm64"),
+		testRelease("v1.2.3", false, false, time.Now(), "may-monitor-agent-linux-amd64"),
+		testRelease("Snapshot-2607061200", true, true, time.Now(), "may-monitor-agent-linux-amd64"),
+		testRelease("Snapshot-2607061300", true, false, time.Now(), "may-monitor-agent-linux-arm64"),
 	}
 
-	if got, ok := selectLatestSnapshotRelease(releases, "komari-agent-linux-amd64", ""); ok {
+	if got, ok := selectLatestSnapshotRelease(releases, "may-monitor-agent-linux-amd64", ""); ok {
 		t.Fatalf("selectLatestSnapshotRelease() = %+v, want no candidate", got)
 	}
 }
 
 func TestSelectExactSnapshotRelease(t *testing.T) {
-	assetName := "komari-agent-linux-amd64"
+	assetName := "may-monitor-agent-linux-amd64"
 	releases := []githubRelease{
 		testRelease("Snapshot-2609231200", true, false, time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC), assetName),
 		testRelease("Snapshot-2609231300", true, false, time.Date(2026, 9, 23, 13, 0, 0, 0, time.UTC), assetName),
@@ -331,8 +331,8 @@ func TestStableUpdateReturnsRestartRequired(t *testing.T) {
 	release := testRelease("v1.2.4", false, false, time.Now(), assetName)
 
 	lister := func(owner, repo string) ([]githubRelease, error) {
-		if owner != "komari-monitor" || repo != "komari-agent" {
-			t.Fatalf("list releases repo = %s/%s, want komari-monitor/komari-agent", owner, repo)
+		if owner != "mxh110708" || repo != "may-monitor-agent" {
+			t.Fatalf("list releases repo = %s/%s, want owned fork", owner, repo)
 		}
 		return []githubRelease{release}, nil
 	}
@@ -416,8 +416,8 @@ func TestSnapshotUpdateReturnsRestartRequired(t *testing.T) {
 
 	deps := updateDeps{
 		list: func(owner, repo string) ([]githubRelease, error) {
-			if owner != "komari-monitor" || repo != "komari-agent" {
-				t.Fatalf("list releases repo = %s/%s, want komari-monitor/komari-agent", owner, repo)
+			if owner != "mxh110708" || repo != "may-monitor-agent" {
+				t.Fatalf("list releases repo = %s/%s, want owned fork", owner, repo)
 			}
 			return []githubRelease{release}, nil
 		},
@@ -493,7 +493,7 @@ func TestVerifyAssetDigest(t *testing.T) {
 	sum := sha256.Sum256(data)
 	matching := "sha256:" + hex.EncodeToString(sum[:])
 
-	asset := githubReleaseAsset{Name: "komari-agent-linux-amd64", Digest: matching}
+	asset := githubReleaseAsset{Name: "may-monitor-agent-linux-amd64", Digest: matching}
 	if err := verifyAssetDigest(asset, data); err != nil {
 		t.Fatalf("verifyAssetDigest() with matching digest error = %v", err)
 	}
@@ -504,8 +504,8 @@ func TestVerifyAssetDigest(t *testing.T) {
 	}
 
 	asset.Digest = ""
-	if err := verifyAssetDigest(asset, data); err != nil {
-		t.Fatalf("verifyAssetDigest() without digest should only warn, got %v", err)
+	if err := verifyAssetDigest(asset, data); err == nil {
+		t.Fatal("verifyAssetDigest() without digest must fail closed")
 	}
 
 	asset.Digest = "sha512:" + strings.Repeat("0", 128)

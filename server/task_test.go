@@ -1,63 +1,55 @@
 package server
 
 import (
+	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
 
-var testTargets = []struct {
-	target string
-}{
-	{"v6-sh-cm.oojj.de"},
-	{"2409:8c1e:8f80:2:6a::"},
-	{"[2409:8c1e:8f80:2:6a::]"},
-	{"[2409:8c1e:8f80:2:6a::]:80"},
-	{"v4-sh-cm.oojj.de"},
-	{"117.185.125.154"},
-	{"117.185.125.154:80"},
-}
-
 func TestICMPPing(t *testing.T) {
-	timeout := 3 * time.Second
-	for _, tt := range testTargets {
-		t.Run(tt.target, func(t *testing.T) {
-			latency, err := icmpPing(tt.target, timeout)
-			if latency < -1 {
-				t.Errorf("ICMP ping %s: invalid latency %d", tt.target, latency)
-			}
-			if err != nil {
-				t.Errorf("ICMP ping %s error: %v", tt.target, err)
-			}
-		})
+	latency, err := icmpPing("127.0.0.1", time.Second)
+	if err != nil && (errors.Is(err, os.ErrPermission) || strings.Contains(err.Error(), "operation not permitted")) {
+		t.Skip("loopback ICMP requires raw-socket permission")
+	}
+	if err != nil || latency < 0 {
+		t.Fatalf("loopback ICMP: latency=%d err=%v", latency, err)
 	}
 }
-
 func TestTCPPing(t *testing.T) {
-	timeout := 3 * time.Second
-	for _, tt := range testTargets {
-		t.Run(tt.target, func(t *testing.T) {
-			latency, err := tcpPing(tt.target, timeout)
-			if latency < -1 {
-				t.Errorf("TCP ping %s: invalid latency %d", tt.target, latency)
-			}
-			if err != nil {
-				t.Errorf("TCP ping %s error: %v", tt.target, err)
-			}
-		})
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			conn.Close()
+		}
+	}()
+	latency, err := tcpPing(listener.Addr().String(), time.Second)
+	if err != nil || latency < 0 {
+		t.Fatalf("loopback TCP: latency=%d err=%v", latency, err)
 	}
 }
-
 func TestHTTPPing(t *testing.T) {
-	timeout := 3 * time.Second
-	for _, tt := range testTargets {
-		t.Run(tt.target, func(t *testing.T) {
-			latency, err := httpPing(tt.target, timeout)
-			if latency < -1 {
-				t.Errorf("HTTP ping %s: invalid latency %d", tt.target, latency)
-			}
-			if err != nil {
-				t.Errorf("HTTP ping %s error: %v", tt.target, err)
-			}
-		})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/unavailable" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	if latency, err := httpPing(server.URL, time.Second); err != nil || latency < 0 {
+		t.Fatalf("loopback HTTP: latency=%d err=%v", latency, err)
+	}
+	if _, err := httpPing(server.URL+"/unavailable", time.Second); err == nil {
+		t.Fatal("HTTP error status accepted")
 	}
 }

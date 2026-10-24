@@ -29,9 +29,10 @@ var flags = pkg_flags.GlobalConfig
 var warningPanelHost, warningRunAsUser string
 
 var RootCmd = &cobra.Command{
-	Use:   "komari-agent",
-	Short: "komari agent",
-	Long:  `komari agent`,
+	Use:     "may-monitor-agent",
+	Version: update.CurrentVersion,
+	Short:   "May Monitor agent (Komari fork)",
+	Long:    `May Monitor agent, based on Komari agent.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Notification helpers must not load the service's config or credentials.
 		if flags.ShowWarning {
@@ -51,6 +52,9 @@ var RootCmd = &cobra.Command{
 		}
 		if flags.PreferIPVersion != "" && flags.PreferIPVersion != "4" && flags.PreferIPVersion != "6" {
 			return fmt.Errorf("invalid --prefer-ip-version value %q: expected 4 or 6", flags.PreferIPVersion)
+		}
+		if err := validateConnectionPolicy(flags); err != nil {
+			return err
 		}
 		// 捕获中止信号，优雅退出
 		stopCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -165,8 +169,8 @@ func init() {
 	RootCmd.PersistentFlags().StringVarP(&flags.Endpoint, "endpoint", "e", "", "API endpoint")
 	//RootCmd.MarkPersistentFlagRequired("endpoint")
 	RootCmd.PersistentFlags().StringVar(&flags.AutoDiscoveryKey, "auto-discovery", "", "Auto discovery key for the agent")
-	RootCmd.PersistentFlags().BoolVar(&flags.DisableAutoUpdate, "disable-auto-update", false, "Disable automatic updates")
-	RootCmd.PersistentFlags().BoolVar(&flags.DisableWebSsh, "disable-web-ssh", false, "Disable remote control(web ssh and rce)")
+	RootCmd.PersistentFlags().BoolVar(&flags.DisableAutoUpdate, "disable-auto-update", true, "Disable automatic updates (May Monitor default; opt in explicitly)")
+	RootCmd.PersistentFlags().BoolVar(&flags.DisableWebSsh, "disable-web-ssh", true, "Disable remote control, file access and version switching (May Monitor default)")
 	//RootCmd.PersistentFlags().BoolVar(&flags.MemoryModeAvailable, "memory-mode-available", false, "[deprecated]Report memory as available instead of used.")
 	RootCmd.PersistentFlags().Float64VarP(&flags.Interval, "interval", "i", 3.0, "Interval in seconds")
 	RootCmd.PersistentFlags().BoolVarP(&flags.IgnoreUnsafeCert, "ignore-unsafe-cert", "u", false, "Ignore unsafe certificate errors")

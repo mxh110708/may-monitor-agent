@@ -1,3 +1,5 @@
+> **May fork v0.1.0-rc.1:** Initial prerelease of the reviewed default monitoring profile. Read [SECURITY.md](SECURITY.md) first. Upstream installation/publishing instructions below are historical references, not approved May deployment steps.
+
 # komari-agent
 
 ## 配置方式

@@ -17,6 +17,10 @@ func handleStartupConfig(params v2.StartupConfigParams) {
 	if result.Config == nil {
 		result.Error = "startup configuration is not available"
 	}
+	if flags.DisableWebSsh {
+		result.Config = nil
+		result.Error = "remote control is disabled"
+	}
 	// Use the existing authenticated POST transport for both WS and pull
 	// requests. Never log the payload or transport errors containing tokens.
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

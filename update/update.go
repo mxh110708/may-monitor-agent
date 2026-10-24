@@ -3,6 +3,7 @@ package update
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -27,8 +28,8 @@ import (
 var ErrRestartRequired = errors.New("update installed; restart required")
 
 var (
-	CurrentVersion string = "0.0.1"
-	Repo           string = "komari-monitor/komari-agent"
+	CurrentVersion string = "0.1.0-rc.1"
+	Repo           string = "mxh110708/may-monitor-agent"
 )
 
 const (
@@ -113,7 +114,20 @@ var (
 
 func getHTTPClient() *http.Client {
 	httpClientOnce.Do(func() {
-		updateClient = dnsresolver.GetHTTPClient(60 * time.Second)
+		base := dnsresolver.GetHTTPClient(60 * time.Second)
+		copyClient := *base
+		if transport, ok := base.Transport.(*http.Transport); ok {
+			clone := transport.Clone()
+			clone.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+			copyClient.Transport = clone
+		}
+		copyClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 || req.URL.Scheme != "https" {
+				return errors.New("unsafe update redirect")
+			}
+			return nil
+		}
+		updateClient = &copyClient
 	})
 	return updateClient
 }
@@ -206,7 +220,7 @@ func parseUpdateTarget(input string) (updateTarget, error) {
 }
 
 func expectedAssetName(goos, goarch string) string {
-	name := fmt.Sprintf("komari-agent-%s-%s", goos, goarch)
+	name := fmt.Sprintf("may-monitor-agent-%s-%s", goos, goarch)
 	if goos == "windows" {
 		name += ".exe"
 	}
@@ -468,11 +482,10 @@ func downloadAsset(client *http.Client, owner, repo string, asset githubReleaseA
 }
 
 // verifyAssetDigest 用 GitHub Releases API 返回的 digest 校验下载内容。
-// 老资产可能没有 digest，此时只告警并放行；digest 存在但不匹配则拒绝安装。
+// Missing or unsupported digests fail closed; no unchecked binary is installed.
 func verifyAssetDigest(asset githubReleaseAsset, data []byte) error {
 	if asset.Digest == "" {
-		log.Printf("WARNING: release asset %s has no digest; skipping integrity check", asset.Name)
-		return nil
+		return fmt.Errorf("release asset %s has no SHA-256 digest", asset.Name)
 	}
 	algorithm, want, found := strings.Cut(asset.Digest, ":")
 	if !found || !strings.EqualFold(algorithm, "sha256") {

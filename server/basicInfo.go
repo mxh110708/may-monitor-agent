@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -92,11 +91,11 @@ func tryUploadDataWithProtocol(data map[string]interface{}) error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return transportError(err)
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readMonitorResponse(resp.Body)
 	if err != nil {
 		return err
 	}
