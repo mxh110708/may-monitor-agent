@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -131,8 +132,12 @@ func loadFromFileLocked() error {
 		store.Config = configOrDefault(config)
 		return nil
 	}
+	cfg := configOrDefault(ns.Config)
+	if err := validateConfig(cfg); err != nil {
+		return err
+	}
 	store = ns
-	config = configOrDefault(ns.Config)
+	config = cfg
 	ensureInitLocked()
 	// 启动时清理过期数据
 	purgeExpiredLocked()
@@ -168,6 +173,15 @@ func configOrDefault(c NetStaticConfig) NetStaticConfig {
 		c.SaveInterval = DefaultSaveInterval
 	}
 	return c
+}
+
+func validateConfig(c NetStaticConfig) error {
+	for _, item := range []struct{ value, unit float64 }{{c.DataPreserveDay, float64(24 * time.Hour)}, {c.DetectInterval, float64(time.Second)}, {c.SaveInterval, float64(time.Second)}} {
+		if math.IsNaN(item.value) || math.IsInf(item.value, 0) || item.value*item.unit < 1 || item.value*item.unit >= float64(math.MaxInt64) {
+			return errors.New("invalid network statistics interval or retention")
+		}
+	}
+	return nil
 }
 
 func purgeExpiredLocked() {
@@ -247,15 +261,22 @@ func flushCacheLocked(ts uint64) {
 
 // startGoroutinesLocked 启动采集和保存的 goroutines（调用前必须已持有锁）
 func startGoroutinesLocked() {
+	// Each generation must keep its own channels. Reading the globals after a
+	// reconfiguration could attach old workers to new tickers and leak workers.
+	detect, save, stopped := detectTicker, saveTicker, stopCh
 	// 采集 goroutine
 	go func() {
 		for {
 			select {
-			case <-detectTicker.C:
+			case <-detect.C:
 				mu.Lock()
+				if stopCh != stopped || !running {
+					mu.Unlock()
+					return
+				}
 				sampleOnceLocked()
 				mu.Unlock()
-			case <-stopCh:
+			case <-stopped:
 				return
 			}
 		}
@@ -265,13 +286,17 @@ func startGoroutinesLocked() {
 	go func() {
 		for {
 			select {
-			case t := <-saveTicker.C:
+			case t := <-save.C:
 				mu.Lock()
+				if stopCh != stopped || !running {
+					mu.Unlock()
+					return
+				}
 				flushCacheLocked(uint64(t.Unix()))
 				purgeExpiredLocked()
 				_ = saveToFileLocked()
 				mu.Unlock()
-			case <-stopCh:
+			case <-stopped:
 				return
 			}
 		}
@@ -282,7 +307,6 @@ func startGoroutinesLocked() {
 func GetNetStatic() (*NetStatic, error) {
 	mu.RLock()
 	defer mu.RUnlock()
-	ensureInitLocked()
 	// 合并 store + cache（cache 不合并为单点，直接以原样返回临时视图）
 	merged := NetStatic{Interfaces: map[string][]TrafficData{}, Config: configOrDefault(config)}
 	for name, arr := range store.Interfaces {
@@ -298,11 +322,11 @@ func GetNetStatic() (*NetStatic, error) {
 
 // StartOrContinue 开始或继续流量统计
 func StartOrContinue() error {
+	mu.Lock()
+	defer mu.Unlock()
 	if running {
 		return nil
 	}
-	mu.Lock()
-	defer mu.Unlock()
 	ensureInitLocked()
 	// 读取历史
 	if err := loadFromFileLocked(); err != nil {
@@ -358,7 +382,6 @@ func Stop() error {
 func GetNetStaticBetween(start, end uint64) (*NetStatic, error) {
 	mu.RLock()
 	defer mu.RUnlock()
-	ensureInitLocked()
 	res := NetStatic{Interfaces: map[string][]TrafficData{}, Config: configOrDefault(config)}
 	inRange := func(ts uint64) bool { return (start == 0 || ts >= start) && (end == 0 || ts <= end) }
 	for name, arr := range store.Interfaces {
@@ -387,7 +410,6 @@ func GetNetStaticBetween(start, end uint64) (*NetStatic, error) {
 func GetTotalTraffic() (map[string]TrafficData, error) {
 	mu.RLock()
 	defer mu.RUnlock()
-	ensureInitLocked()
 	res := map[string]TrafficData{}
 	add := func(name string, tx, rx uint64) {
 		cur := res[name]
@@ -418,7 +440,6 @@ func GetTotalTraffic() (map[string]TrafficData, error) {
 func GetTotalTrafficBetween(start, end uint64) (map[string]TrafficData, error) {
 	mu.RLock()
 	defer mu.RUnlock()
-	ensureInitLocked()
 	res := map[string]TrafficData{}
 	inRange := func(ts uint64) bool { return (start == 0 || ts >= start) && (end == 0 || ts <= end) }
 	add := func(name string, tx, rx uint64) {
@@ -459,6 +480,20 @@ func SetNewConfig(newCfg NetStaticConfig) error {
 	mu.Lock()
 	defer mu.Unlock()
 	ensureInitLocked()
+	// Validate the complete candidate before changing shared state or tickers.
+	candidate := configOrDefault(config)
+	if newCfg.DataPreserveDay != 0 {
+		candidate.DataPreserveDay = newCfg.DataPreserveDay
+	}
+	if newCfg.DetectInterval != 0 {
+		candidate.DetectInterval = newCfg.DetectInterval
+	}
+	if newCfg.SaveInterval != 0 {
+		candidate.SaveInterval = newCfg.SaveInterval
+	}
+	if err := validateConfig(candidate); err != nil {
+		return err
+	}
 	// 合并新配置
 	if newCfg.DataPreserveDay != 0 {
 		store.Config.DataPreserveDay = newCfg.DataPreserveDay
@@ -517,11 +552,9 @@ func SetNewConfig(newCfg NetStaticConfig) error {
 			}
 		}
 	}
-	// 立即写盘
-	_ = saveToFileLocked()
-	// 同时做一次过期清理
+	// Clean before persisting so expired rows do not reappear after restart.
 	purgeExpiredLocked()
-	return nil
+	return saveToFileLocked()
 }
 
 func ForceReplaceRecord(rec map[string][]TrafficData) error {

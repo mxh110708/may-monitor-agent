@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/komari-monitor/komari-agent/dnsresolver"
 	monitoring "github.com/komari-monitor/komari-agent/monitoring/unit"
 	"github.com/komari-monitor/komari-agent/protocol/transport"
 	v2 "github.com/komari-monitor/komari-agent/protocol/v2"
@@ -67,7 +66,7 @@ func tryUploadData(data map[string]interface{}) error {
 }
 
 func tryUploadDataWithProtocol(data map[string]interface{}) error {
-	endpoint := strings.TrimSuffix(flags.Endpoint, "/") + "/api/clients/v2/rpc?token=" + flags.Token
+	endpoint := strings.TrimSuffix(flags.Endpoint, "/") + "/api/clients/v2/rpc"
 	payload := v2.BuildBasicInfoPayload(data)
 	body := payload
 	compressed := false
@@ -83,11 +82,12 @@ func tryUploadDataWithProtocol(data map[string]interface{}) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-May-Agent-Token", flags.Token)
 	if compressed {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
 
-	client := dnsresolver.GetHTTPClientWithPreference(30*time.Second, flags.PreferIPVersion)
+	client := monitorHTTPClient(30 * time.Second)
 
 	resp, err := client.Do(req)
 	if err != nil {

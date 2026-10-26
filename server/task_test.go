@@ -1,23 +1,20 @@
 package server
 
 import (
-	"errors"
+	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"strings"
 	"testing"
-	"time"
 )
 
 func TestICMPPing(t *testing.T) {
-	latency, err := icmpPing("127.0.0.1", time.Second)
-	if err != nil && (errors.Is(err, os.ErrPermission) || strings.Contains(err.Error(), "operation not permitted")) {
+	result := measureProbe(context.Background(), ProbeTask{ID: 1, Type: "icmp", Target: "127.0.0.1", TimeoutMs: 1000})
+	if result.Status == "permission_denied" {
 		t.Skip("loopback ICMP requires raw-socket permission")
 	}
-	if err != nil || latency < 0 {
-		t.Fatalf("loopback ICMP: latency=%d err=%v", latency, err)
+	if result.Status != "ok" || result.Value < 0 {
+		t.Fatalf("loopback ICMP: %#v", result)
 	}
 }
 func TestTCPPing(t *testing.T) {
@@ -32,9 +29,9 @@ func TestTCPPing(t *testing.T) {
 			conn.Close()
 		}
 	}()
-	latency, err := tcpPing(listener.Addr().String(), time.Second)
-	if err != nil || latency < 0 {
-		t.Fatalf("loopback TCP: latency=%d err=%v", latency, err)
+	result := measureProbe(context.Background(), ProbeTask{ID: 1, Type: "tcp", Target: listener.Addr().String(), TimeoutMs: 1000})
+	if result.Status != "ok" || result.Value < 0 {
+		t.Fatalf("loopback TCP: %#v", result)
 	}
 }
 func TestHTTPPing(t *testing.T) {
@@ -46,10 +43,10 @@ func TestHTTPPing(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
-	if latency, err := httpPing(server.URL, time.Second); err != nil || latency < 0 {
-		t.Fatalf("loopback HTTP: latency=%d err=%v", latency, err)
+	if result := measureProbe(context.Background(), ProbeTask{ID: 1, Type: "http", Target: server.URL, TimeoutMs: 1000}); result.Status != "ok" || result.Value < 0 {
+		t.Fatalf("loopback HTTP: %#v", result)
 	}
-	if _, err := httpPing(server.URL+"/unavailable", time.Second); err == nil {
+	if result := measureProbe(context.Background(), ProbeTask{ID: 1, Type: "http", Target: server.URL + "/unavailable", TimeoutMs: 1000}); result.Status != "http_status" || result.HTTPStatus != 503 {
 		t.Fatal("HTTP error status accepted")
 	}
 }

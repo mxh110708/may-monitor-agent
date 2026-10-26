@@ -129,7 +129,7 @@ func EstablishWebSocketConnection(onRestartRequired func()) {
 }
 
 func buildWebSocketEndpoint() string {
-	websocketEndpoint := strings.TrimSuffix(flags.Endpoint, "/") + "/api/clients/v2/rpc?token=" + flags.Token
+	websocketEndpoint := strings.TrimSuffix(flags.Endpoint, "/") + "/api/clients/v2/rpc"
 	websocketEndpoint = "ws" + strings.TrimPrefix(websocketEndpoint, "http")
 	if convertedEndpoint, err := utils.ConvertIDNToASCII(websocketEndpoint); err == nil {
 		return convertedEndpoint
@@ -210,7 +210,7 @@ func postV2Request(payload []byte) (*v2.Response, error) {
 }
 
 func postV2RequestContext(ctx context.Context, payload []byte) (*v2.Response, error) {
-	endpoint := strings.TrimSuffix(flags.Endpoint, "/") + "/api/clients/v2/rpc?token=" + flags.Token
+	endpoint := strings.TrimSuffix(flags.Endpoint, "/") + "/api/clients/v2/rpc"
 	body := payload
 	compressed := false
 	if !flags.DisableCompression {
@@ -224,10 +224,11 @@ func postV2RequestContext(ctx context.Context, payload []byte) (*v2.Response, er
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-May-Agent-Token", flags.Token)
 	if compressed {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
-	client := dnsresolver.GetHTTPClientWithPreference(35*time.Second, flags.PreferIPVersion)
+	client := monitorHTTPClient(35 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, transportError(err)
@@ -331,7 +332,7 @@ func markV2EventSeen(id string) bool {
 func connectWebSocket(websocketEndpoint string) (*ws.SafeConn, error) {
 	dialer := newWSDialer()
 
-	conn, resp, err := dialer.Dial(websocketEndpoint, nil)
+	conn, resp, err := dialer.Dial(websocketEndpoint, http.Header{"X-May-Agent-Token": []string{flags.Token}})
 	if err != nil {
 		if resp != nil && resp.StatusCode != 101 {
 			return nil, &httpStatusError{StatusCode: resp.StatusCode, Status: resp.Status}
@@ -382,12 +383,14 @@ func processV2Event(conn *ws.SafeConn, method string, params interface{}, eventI
 		}
 	case v2.MethodAgentPing:
 		var p struct {
-			TaskID uint   `json:"ping_task_id"`
-			Type   string `json:"ping_type"`
-			Target string `json:"ping_target"`
+			TaskID    uint   `json:"ping_task_id"`
+			Type      string `json:"ping_type"`
+			Target    string `json:"ping_target"`
+			Revision  string `json:"revision"`
+			TimeoutMs int    `json:"timeout_ms"`
 		}
 		if err := v2.BindParams(params, &p); err == nil {
-			go NewPingTask(conn, p.TaskID, p.Type, p.Target)
+			submitAgentProbe(conn, ProbeTask{ID: p.TaskID, Type: p.Type, Target: p.Target, Revision: p.Revision, TimeoutMs: p.TimeoutMs})
 			return true
 		} else {
 			log.Printf("bad v2 ping params: %v", err)

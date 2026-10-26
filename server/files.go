@@ -21,7 +21,6 @@ import (
 	"time"
 
 	pkg_flags "github.com/komari-monitor/komari-agent/cmd/flags"
-	"github.com/komari-monitor/komari-agent/dnsresolver"
 	v2 "github.com/komari-monitor/komari-agent/protocol/v2"
 )
 
@@ -807,9 +806,9 @@ func matchFileContent(path, query, lowerQuery string) (searchMatch, bool) {
 
 func postFileResult(result v2.FileResult) {
 	endpoint := strings.TrimSuffix(flags.Endpoint, "/") +
-		"/api/clients/v2/rpc?token=" + flags.Token
+		"/api/clients/v2/rpc"
 	body := v2.NewRequest(nil, v2.MethodAgentFileResult, result)
-	client := dnsresolver.GetHTTPClientWithPreference(60*time.Second, flags.PreferIPVersion)
+	client := monitorHTTPClient(60 * time.Second)
 	const maxAttempts = 4
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
@@ -818,6 +817,7 @@ func postFileResult(result v2.FileResult) {
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-May-Agent-Token", flags.Token)
 		response, err := client.Do(req)
 		if response != nil {
 			_, _ = io.Copy(io.Discard, response.Body)
