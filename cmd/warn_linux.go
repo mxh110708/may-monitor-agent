@@ -14,10 +14,8 @@ import (
 )
 
 const (
-	linuxMOTDPath          = "/etc/motd"
-	legacyUpdateMOTDPath   = "/etc/update-motd.d/99-komari-agent-warning"
-	legacyUpdateMOTDMarker = "# Komari Agent managed MOTD warning"
-	motdWarningStart       = "[Komari] Remote control is enabled on this device"
+	linuxMOTDPath    = "/etc/motd"
+	motdWarningStart = "[Komari] Remote control is enabled on this device"
 )
 
 var motdWarningEnd = "Uninstall Komari Agent: " + warningUninstallURL + "\n"
@@ -35,7 +33,6 @@ func startSecurityWarning(ctx context.Context) func() {
 	if ctx.Err() != nil {
 		return func() {}
 	}
-	removeLegacyUpdateMOTDWarning(legacyUpdateMOTDPath)
 	if flags.DisableWebSsh {
 		if err := removeInstalledMOTDWarning(linuxMOTDPath); err != nil {
 			log.Printf("[warn] could not remove MOTD warning: %v", err)
@@ -70,24 +67,6 @@ func removeInstalledMOTDWarning(path string) error {
 		return nil
 	}
 	return writeMOTD(original, []byte(content))
-}
-
-func removeLegacyUpdateMOTDWarning(path string) {
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return
-	}
-	if err != nil {
-		log.Printf("[warn] could not inspect legacy update-motd hook: %v", err)
-		return
-	}
-	if !strings.HasPrefix(string(data), legacyUpdateMOTDMarker+"\n") {
-		log.Printf("[warn] legacy update-motd path is not managed by Komari; leaving it in place")
-		return
-	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		log.Printf("[warn] could not remove legacy update-motd hook: %v", err)
-	}
 }
 
 func installMOTDWarning(path string, warning securityWarning) (func(), error) {

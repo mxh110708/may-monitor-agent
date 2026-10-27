@@ -28,7 +28,7 @@ import (
 var ErrRestartRequired = errors.New("update installed; restart required")
 
 var (
-	CurrentVersion string = "0.1.0-rc.1"
+	CurrentVersion string = "0.1.0-rc.4"
 	Repo           string = "mxh110708/may-monitor-agent"
 )
 

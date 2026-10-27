@@ -273,26 +273,3 @@ func TestMOTDWarningFollowsSymlink(t *testing.T) {
 		t.Fatalf("symlink target was not restored: %q, %v", data, err)
 	}
 }
-
-func TestLegacyUpdateMOTDHookCleanup(t *testing.T) {
-	dir := t.TempDir()
-	managed := filepath.Join(dir, "managed")
-	if err := os.WriteFile(managed, []byte(legacyUpdateMOTDMarker+"\nprintf warning\n"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	removeLegacyUpdateMOTDWarning(managed)
-	if _, err := os.Stat(managed); !os.IsNotExist(err) {
-		t.Fatalf("legacy managed hook was not removed: %v", err)
-	}
-
-	unmanaged := filepath.Join(dir, "unmanaged")
-	const content = "#!/bin/sh\nprintf administrator\n"
-	if err := os.WriteFile(unmanaged, []byte(content), 0755); err != nil {
-		t.Fatal(err)
-	}
-	removeLegacyUpdateMOTDWarning(unmanaged)
-	data, err := os.ReadFile(unmanaged)
-	if err != nil || string(data) != content {
-		t.Fatal("unmanaged legacy hook was changed")
-	}
-}
