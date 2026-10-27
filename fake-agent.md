@@ -1,3 +1,5 @@
+> Development fixture only. Use an isolated owned test Server; generated metrics are not production telemetry or soak acceptance. Current Agent setup is documented in [operations](docs/OPERATIONS.zh-CN.md).
+
 # Fake Agent
 
 `fake_agent.py` creates a test-only Komari v2 client that reports generated system metrics. It only advertises and processes `agent.ping`; it does not connect to, advertise, or process terminal or command-execution requests.
